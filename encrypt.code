@@ -45,35 +45,34 @@ encrypt_salt_shell=0123456789ABCDEF
 # 进程创建和销毁都是很耗时的操作，msys2的命令耗时有大部分在此，应尽量避免之
 
 salt_length=$(cat /dev/null | $repo_crypt_command -pass pass:0 -S $encrypt_salt_shell | wc -c)
-export repo_crypt_command
 
 encrypt_code_text='# 文本加密，需传入Salt值
-	local salt_value="$@"
-	if [ $salt_length -eq 0 ]; then
-		$repo_crypt_command -a -A -pass file:"$encrypt_pass_file" -S "$salt_value"
+	salt_value="$@"
+	if [ '$salt_length' -eq 0 ]; then
+		'"$repo_crypt_command"' -a -A -pass file:"'"$encrypt_pass_file"'" -S "$salt_value"
 	else
-		$repo_crypt_command -pass file:"$encrypt_pass_file" -S "$salt_value" | {
-			dd bs=$salt_length skip=1 count=0 2>/dev/null # 去除Salt值
+		'"$repo_crypt_command"' -pass file:"'"$encrypt_pass_file"'" -S "$salt_value" | {
+			dd bs='$salt_length' skip=1 count=0 2>/dev/null # 去除Salt值
 			cat
 		} | openssl base64 -A
 	fi
 '
 
 decrypt_code_text='# 文本解密，需传入Salt值
-	local salt_value="$@"
-	if [ $salt_length -eq 0 ]; then
-		$repo_crypt_command -a -A -pass file:"$encrypt_pass_file" -d -S "$salt_value"
+	salt_value="$@"
+	if [ '$salt_length' -eq 0 ]; then
+		'"$repo_crypt_command"' -a -A -pass file:"'"$encrypt_pass_file"'" -d -S "$salt_value"
 	else
 		openssl base64 -A -d | {
 			echo -n "$salt_value" | sed '$'\x27''s/\([0-9A-F]\{2\}\)/\\\\\\x\1/gI'$'\x27'' | {
 				printf "Salted__"
 				xargs printf
 			} | {
-				dd bs=$salt_length count=1 2>/dev/null # 增添Salt值
+				dd bs='$salt_length' count=1 2>/dev/null # 增添Salt值
 				cat > /dev/null # 消耗掉xargs命令的输出
 			}
 			cat
-		} | $repo_crypt_command -pass file:"$encrypt_pass_file" -d -S "$salt_value"
+		} | '"$repo_crypt_command"' -pass file:"'"$encrypt_pass_file"'" -d -S "$salt_value"
 	fi
 '
 
@@ -90,14 +89,14 @@ function decrypt_code_bin ()
 
 
 code_encrypt='# 用于加密Shell脚本中的标识，参数是待加密的明文
-	local plaintext="$*"
+	plaintext="$*"
 	echo -n "code_decrypt "
 	if [ "$plaintext" ]; then
-		if [ $salt_length -eq 0 ]; then
-			echo -n "$plaintext" | $repo_crypt_command -a -A -pass file:"$encrypt_pass_file" -S "$encrypt_salt_shell"
+		if [ '$salt_length' -eq 0 ]; then
+			echo -n "$plaintext" | '"$repo_crypt_command"' -a -A -pass file:"'"$encrypt_pass_file"'" -S "$encrypt_salt_shell"
 		else
-			echo -n "$plaintext" | $repo_crypt_command -pass file:"$encrypt_pass_file" -S "$encrypt_salt_shell" | {
-				dd bs=$salt_length skip=1 count=0 2>/dev/null # 去除Salt值
+			echo -n "$plaintext" | '"$repo_crypt_command"' -pass file:"'"$encrypt_pass_file"'" -S "$encrypt_salt_shell" | {
+				dd bs='$salt_length' skip=1 count=0 2>/dev/null # 去除Salt值
 				cat
 			} | openssl base64 -A
 		fi
@@ -105,23 +104,23 @@ code_encrypt='# 用于加密Shell脚本中的标识，参数是待加密的明�
 '
 
 code_decrypt='# 用于解密Shell脚本中的标识，参数是待解密的密文
-	local ciphertext="$*"
+	ciphertext="$*"
 	echo -n "code_encrypt "
 	if [ "$ciphertext" ]; then
 		echo -n "$ciphertext" | {
-			if [ $salt_length -eq 0 ]; then
-				$repo_crypt_command -a -A -pass file:"$encrypt_pass_file" -d -S "$encrypt_salt_shell"
+			if [ '$salt_length' -eq 0 ]; then
+				'"$repo_crypt_command"' -a -A -pass file:"'"$encrypt_pass_file"'" -d -S "$encrypt_salt_shell"
 			else
 				openssl base64 -A -d | {
 					echo -n "$encrypt_salt_shell" | sed '$'\x27''s/\([0-9A-F]\{2\}\)/\\\\\\x\1/gI'$'\x27'' | {
 						printf "Salted__"
 						xargs printf
 					} | {
-						dd bs=$salt_length count=1 2>/dev/null # 增添Salt值
+						dd bs='$salt_length' count=1 2>/dev/null # 增添Salt值
 						cat > /dev/null # 消耗掉xargs命令的输出
 					}
 					cat
-				} | $repo_crypt_command -pass file:"$encrypt_pass_file" -d -S "$encrypt_salt_shell"
+				} | '"$repo_crypt_command"' -pass file:"'"$encrypt_pass_file"'" -d -S "$encrypt_salt_shell"
 			fi
 		} | od -tu1 -An -v | LC_ALL=C awk '$'\x27''{str=str " " $0} END{ # 注意明文中可能有特殊字符，必须以二进制方式处理为转义字符，经过od命令转十进制处理
 			printf("\x27");
@@ -218,8 +217,7 @@ code_decrypt='# 用于解密Shell脚本中的标识，参数是待解密的密�
 	fi
 '
 
-# 导出必要函数和变量用于加密解密操作
-export encrypt_pass_file encrypt_salt_shell salt_length
+# 导出必要替代变量用于加密解密操作
 export code_encrypt code_decrypt encrypt_code_text decrypt_code_text
 
 function encrypt_operator ()
@@ -663,7 +661,7 @@ elif [ "$*" = R ]; then # 恢复备份
 	recovery_backup_operator
 fi
 
-unset code_encrypt code_decrypt
+unset salt_length code_encrypt code_decrypt encrypt_code_text decrypt_code_text
 
 function code_encrypt ()
 {
@@ -698,8 +696,9 @@ function code_decrypt ()
 	fi
 }
 
+export repo_crypt_command encrypt_pass_file encrypt_salt_shell
 export -f code_encrypt code_decrypt
 # 清理函数和变量
-unset salt_length code_encrypt_file bin_encrypt_file sh_encrypt_file encrypt_code_text decrypt_code_text
+unset code_encrypt_file bin_encrypt_file sh_encrypt_file
 unset -f encrypt_operator decrypt_operator full_decrypt_operator recovery_backup_operator encrypt_code_bin decrypt_code_bin
 # 保证脚本环境干净
