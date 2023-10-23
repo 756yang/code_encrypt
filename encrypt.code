@@ -47,8 +47,7 @@ encrypt_salt_shell=0123456789ABCDEF
 salt_length=$(cat /dev/null | $repo_crypt_command -pass pass:0 -S $encrypt_salt_shell | wc -c)
 export repo_crypt_command
 
-function encrypt_code_text ()
-{ # 文本加密，需传入Salt值
+encrypt_code_text='# 文本加密，需传入Salt值
 	local salt_value="$@"
 	if [ $salt_length -eq 0 ]; then
 		$repo_crypt_command -a -A -pass file:"$encrypt_pass_file" -S "$salt_value"
@@ -58,16 +57,15 @@ function encrypt_code_text ()
 			cat
 		} | openssl base64 -A
 	fi
-}
+'
 
-function decrypt_code_text ()
-{ # 文本解密，需传入Salt值
+decrypt_code_text='# 文本解密，需传入Salt值
 	local salt_value="$@"
 	if [ $salt_length -eq 0 ]; then
 		$repo_crypt_command -a -A -pass file:"$encrypt_pass_file" -d -S "$salt_value"
 	else
 		openssl base64 -A -d | {
-			echo -n "$salt_value" | sed 's/\([0-9A-F]\{2\}\)/\\\\\\x\1/gI' | {
+			echo -n "$salt_value" | sed '$'\x27''s/\([0-9A-F]\{2\}\)/\\\\\\x\1/gI'$'\x27'' | {
 				printf "Salted__"
 				xargs printf
 			} | {
@@ -77,7 +75,7 @@ function decrypt_code_text ()
 			cat
 		} | $repo_crypt_command -pass file:"$encrypt_pass_file" -d -S "$salt_value"
 	fi
-}
+'
 
 function encrypt_code_bin ()
 { # 二进制文件加密，无需传参
@@ -91,8 +89,7 @@ function decrypt_code_bin ()
 }
 
 
-function code_encrypt ()
-{ # 用于加密Shell脚本中的标识，参数是待加密的明文
+code_encrypt='# 用于加密Shell脚本中的标识，参数是待加密的明文
 	local plaintext="$*"
 	echo -n "code_decrypt "
 	if [ "$plaintext" ]; then
@@ -105,10 +102,9 @@ function code_encrypt ()
 			} | openssl base64 -A
 		fi
 	fi
-}
+'
 
-function code_decrypt ()
-{ # 用于解密Shell脚本中的标识，参数是待解密的密文
+code_decrypt='# 用于解密Shell脚本中的标识，参数是待解密的密文
 	local ciphertext="$*"
 	echo -n "code_encrypt "
 	if [ "$ciphertext" ]; then
@@ -117,7 +113,7 @@ function code_decrypt ()
 				$repo_crypt_command -a -A -pass file:"$encrypt_pass_file" -d -S "$encrypt_salt_shell"
 			else
 				openssl base64 -A -d | {
-					echo -n "$encrypt_salt_shell" | sed 's/\([0-9A-F]\{2\}\)/\\\\\\x\1/gI' | {
+					echo -n "$encrypt_salt_shell" | sed '$'\x27''s/\([0-9A-F]\{2\}\)/\\\\\\x\1/gI'$'\x27'' | {
 						printf "Salted__"
 						xargs printf
 					} | {
@@ -127,7 +123,7 @@ function code_decrypt ()
 					cat
 				} | $repo_crypt_command -pass file:"$encrypt_pass_file" -d -S "$encrypt_salt_shell"
 			fi
-		} | od -tu1 -An -v | LC_ALL=C awk '{str=str " " $0} END{ # 注意明文中可能有特殊字符，必须以二进制方式处理为转义字符，经过od命令转十进制处理
+		} | od -tu1 -An -v | LC_ALL=C awk '$'\x27''{str=str " " $0} END{ # 注意明文中可能有特殊字符，必须以二进制方式处理为转义字符，经过od命令转十进制处理
 			printf("\x27");
 			len=split(str,arr," ");
 			str="";
@@ -218,21 +214,13 @@ function code_decrypt ()
 			for(i=1;i<=len;i++)
 				printf("\\x" sprintf("%x",arr[i]+0));
 			if(len!=0)printf("\x27\x27");
-		}' # 明文需以字符串存储，不支持$'\0'字符，请注意
-: << "EOF"
-		{ # UTF8编码规则，先过单引号和换行符，再以awk处理UTF8编码，以下代码作废，直接用awk处理更好
-			echo -n "'"
-			export LC_ALL=C
-			sed -b "s/'/'"'"'"'"'"'"'/g" | sed -b 's/\r/$'"'"'\\r'"'"'/g' | sed -b ':j;N;s/\n/$'"'"'\\n'"'"'/g;b j'
-			echo -n "'"
-		} 
-EOF
+		}'$'\x27'' # 明文需以字符串存储，不支持"\0"字符，请注意
 	fi
-}
+'
 
 # 导出必要函数和变量用于加密解密操作
 export encrypt_pass_file encrypt_salt_shell salt_length
-export -f code_encrypt code_decrypt encrypt_code_text decrypt_code_text
+export code_encrypt code_decrypt encrypt_code_text decrypt_code_text
 
 function encrypt_operator ()
 { # 加密操作
@@ -272,7 +260,7 @@ function encrypt_operator ()
 				cat "$line" | od -tu1 -An -v | LC_ALL=C awk -v salt=$salt_value -v linefeed="$text_linefeed" 'BEGIN{
 					printf("%s",salt linefeed); # 第一行输出Salt值
 					str="";
-					cmd="encrypt_code_text " salt;
+					cmd="bash -c \"$encrypt_code_text\" @ " salt;
 				} {
 					for(i=1;i<=NF;i++){
 						if($i==13||$i==10){ # 换行符 CR LF
@@ -317,7 +305,7 @@ function encrypt_operator ()
 								salt="openssl rand -hex 8";
 								salt | getline newsalt;
 								close(salt);
-								cmd="encrypt_code_text " newsalt;
+								cmd="bash -c \"$encrypt_code_text\" @ " newsalt;
 								printf("%s",substr($0,1,RLENGTH-16) newsalt linefeed);
 								crypt_flag=1;
 							}
@@ -372,7 +360,7 @@ function encrypt_operator ()
 				while(where=match(str,"`code_encrypt [^`]*`")){ # 循环处理匹配内容
 					lstr=substr(str,1,where);
 					rstr=substr(str,where+RLENGTH-1);
-					cmd=substr(str,where+1,RLENGTH-2);
+					cmd="bash -c \"$" substr(str,where+1,12) "\" @ " substr(str,where+14,RLENGTH-15);
 					cmd | getline str; # 执行code_encrypt函数
 					close(cmd); # 必须关闭命令，以免重复命令异常
 					str=lstr str rstr;
@@ -433,7 +421,7 @@ function decrypt_operator ()
 						if(i<=NF){
 							if(lineend==13&&$i==10)i++;
 							salt_flag=2;
-							cmd="decrypt_code_text " salt;
+							cmd="bash -c \"$decrypt_code_text\" @ " salt;
 						}
 					}
 					if(salt_flag==2){
@@ -474,7 +462,7 @@ function decrypt_operator ()
 						else{
 							if(match($0,"^(.*[^0-9A-Za-z])?[0-9A-Fa-f]{16}$")){
 								salt=substr($0,RLENGTH-15);
-								cmd="decrypt_code_text " salt;
+								cmd="bash -c \"$decrypt_code_text\" @ " salt;
 								crypt_flag=1;
 							}
 							printf("%s",$0 linefeed);
@@ -525,7 +513,7 @@ function decrypt_operator ()
 				while(where=match(str,"`code_decrypt [^`]*`")){
 					lstr=substr(str,1,where);
 					rstr=substr(str,where+RLENGTH-1);
-					cmd=substr(str,where+1,RLENGTH-2);
+					cmd="bash -c \"$" substr(str,where+1,12) "\" @ " substr(str,where+14,RLENGTH-15);
 					cmd | getline str; # 执行code_decrypt函数
 					close(cmd); # 必须关闭命令，以免重复命令异常
 					str=lstr str rstr;
@@ -675,7 +663,7 @@ elif [ "$*" = R ]; then # 恢复备份
 	recovery_backup_operator
 fi
 
-unset -f code_encrypt code_decrypt
+unset code_encrypt code_decrypt
 
 function code_encrypt ()
 {
@@ -712,6 +700,6 @@ function code_decrypt ()
 
 export -f code_encrypt code_decrypt
 # 清理函数和变量
-unset salt_length code_encrypt_file bin_encrypt_file sh_encrypt_file
-unset -f encrypt_code_text decrypt_code_text encrypt_code_bin decrypt_code_bin encrypt_operator decrypt_operator full_decrypt_operator recovery_backup_operator
+unset salt_length code_encrypt_file bin_encrypt_file sh_encrypt_file encrypt_code_text decrypt_code_text
+unset -f encrypt_operator decrypt_operator full_decrypt_operator recovery_backup_operator encrypt_code_bin decrypt_code_bin
 # 保证脚本环境干净
