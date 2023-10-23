@@ -3,16 +3,20 @@
 # encrypt for code repositories
 # 脚本检查完毕，语法逻辑无误
 
+repo_crypt_command="openssl enc -chacha20 -pbkdf2 -iter 10000 -md sha256"
+
 # 比较openssl的版本号
 printf '%s\n' "1.1.1" $(openssl version | awk '{print $2}') | sort -V -C || {
 	echo "the openssl version $(openssl version | awk '{print $2}') is less than 1.1.1, and this script will exit 1."
 	exit 1
 }
+: << "EOF"
 salt_length=0
 printf '%s\n' "3.0.0" $(openssl version | awk '{print $2}') | sort -V -C || {
 	# openssl v1.1.1 Salt值会保留到密文里面，需去除Salt值
 	salt_length=$(cat /dev/null | openssl chacha20 -pbkdf2 -pass pass:0 | wc -c)
 }
+EOF
 
 # 文本加密
 code_encrypt_file=(
@@ -31,22 +35,25 @@ test/script_encrypt.sh
 )
 
 # 加密解密操作备份文件路径
-crypt_backup_file="$(pwd)/.bakcrypt.tgz"
+crypt_backup_file=".bakcrypt.tgz"
 # 仓库密码文件
-encrypt_pass_file="$(pwd)/.encrypt.pass"
+encrypt_pass_file=".encrypt.pass"
 # Shell脚本加密的Salt值
 encrypt_salt_shell=0123456789ABCDEF
 
 # 采用openssl做加密解密操作，chacha20对称加密算法(流加密)，pbkdf2密钥生成算法
+# 进程创建和销毁都是很耗时的操作，msys2的命令耗时有大部分在此，应尽量避免之
+
+salt_length=$(cat /dev/null | $repo_crypt_command -pass pass:0 -S $encrypt_salt_shell | wc -c)
+export repo_crypt_command
 
 function encrypt_code_text ()
 { # 文本加密，需传入Salt值
 	local salt_value="$@"
-	cd $(dirname "$encrypt_pass_file")
 	if [ $salt_length -eq 0 ]; then
-		openssl enc -chacha20 -pbkdf2 -iter 10000 -md sha256 -a -A -pass file:$(basename "$encrypt_pass_file") -S "$salt_value"
+		$repo_crypt_command -a -A -pass file:"$encrypt_pass_file" -S "$salt_value"
 	else
-		openssl enc -chacha20 -pbkdf2 -iter 10000 -md sha256 -pass file:$(basename "$encrypt_pass_file") -S "$salt_value" | {
+		$repo_crypt_command -pass file:"$encrypt_pass_file" -S "$salt_value" | {
 			dd bs=$salt_length skip=1 count=0 2>/dev/null # 去除Salt值
 			cat
 		} | openssl base64 -A
@@ -56,9 +63,8 @@ function encrypt_code_text ()
 function decrypt_code_text ()
 { # 文本解密，需传入Salt值
 	local salt_value="$@"
-	cd $(dirname "$encrypt_pass_file")
 	if [ $salt_length -eq 0 ]; then
-		openssl enc -chacha20 -pbkdf2 -iter 10000 -md sha256 -a -A -pass file:$(basename "$encrypt_pass_file") -d -S "$salt_value"
+		$repo_crypt_command -a -A -pass file:"$encrypt_pass_file" -d -S "$salt_value"
 	else
 		openssl base64 -A -d | {
 			echo -n "$salt_value" | sed 's/\([0-9A-F]\{2\}\)/\\\\\\x\1/gI' | {
@@ -69,20 +75,19 @@ function decrypt_code_text ()
 				cat > /dev/null # 消耗掉xargs命令的输出
 			}
 			cat
-		} | openssl enc -chacha20 -pbkdf2 -iter 10000 -md sha256 -pass file:$(basename "$encrypt_pass_file") -d -S "$salt_value"
+		} | $repo_crypt_command -pass file:"$encrypt_pass_file" -d -S "$salt_value"
 	fi
 }
 
 function encrypt_code_bin ()
 { # 二进制文件加密，无需传参
-	cd $(dirname "$encrypt_pass_file") # 这里先切换工作目录，因为openssl v3.0+版本可能存在BUG："-pass file:"问题
-	openssl enc -chacha20 -pbkdf2 -iter 10000 -md sha256 -pass file:$(basename "$encrypt_pass_file")
+	# cd $(dirname "$encrypt_pass_file") # 这里先切换工作目录，因为openssl v3.0+版本可能存在BUG："-pass file:"问题
+	$repo_crypt_command -pass file:"$encrypt_pass_file"
 }
 
 function decrypt_code_bin ()
 { # 二进制文件解密，无需传参
-	cd $(dirname "$encrypt_pass_file")
-	openssl enc -chacha20 -pbkdf2 -iter 10000 -md sha256 -pass file:$(basename "$encrypt_pass_file") -d
+	$repo_crypt_command -pass file:"$encrypt_pass_file" -d
 }
 
 
@@ -91,11 +96,10 @@ function code_encrypt ()
 	local plaintext="$*"
 	echo -n "code_decrypt "
 	if [ "$plaintext" ]; then
-		cd $(dirname "$encrypt_pass_file")
 		if [ $salt_length -eq 0 ]; then
-			echo -n "$plaintext" | openssl enc -chacha20 -pbkdf2 -iter 10000 -md sha256 -a -A -pass file:$(basename "$encrypt_pass_file") -S "$encrypt_salt_shell"
+			echo -n "$plaintext" | $repo_crypt_command -a -A -pass file:"$encrypt_pass_file" -S "$encrypt_salt_shell"
 		else
-			echo -n "$plaintext" | openssl enc -chacha20 -pbkdf2 -iter 10000 -md sha256 -pass file:$(basename "$encrypt_pass_file") -S "$encrypt_salt_shell" | {
+			echo -n "$plaintext" | $repo_crypt_command -pass file:"$encrypt_pass_file" -S "$encrypt_salt_shell" | {
 				dd bs=$salt_length skip=1 count=0 2>/dev/null # 去除Salt值
 				cat
 			} | openssl base64 -A
@@ -109,9 +113,8 @@ function code_decrypt ()
 	echo -n "code_encrypt "
 	if [ "$ciphertext" ]; then
 		echo -n "$ciphertext" | {
-			cd $(dirname "$encrypt_pass_file")
 			if [ $salt_length -eq 0 ]; then
-				openssl enc -chacha20 -pbkdf2 -iter 10000 -md sha256 -a -A -pass file:$(basename "$encrypt_pass_file") -d -S "$encrypt_salt_shell"
+				$repo_crypt_command -a -A -pass file:"$encrypt_pass_file" -d -S "$encrypt_salt_shell"
 			else
 				openssl base64 -A -d | {
 					echo -n "$encrypt_salt_shell" | sed 's/\([0-9A-F]\{2\}\)/\\\\\\x\1/gI' | {
@@ -122,7 +125,7 @@ function code_decrypt ()
 						cat > /dev/null # 消耗掉xargs命令的输出
 					}
 					cat
-				} | openssl enc -chacha20 -pbkdf2 -iter 10000 -md sha256 -pass file:$(basename "$encrypt_pass_file") -d -S "$encrypt_salt_shell"
+				} | $repo_crypt_command -pass file:"$encrypt_pass_file" -d -S "$encrypt_salt_shell"
 			fi
 		} | od -tu1 -An -v | LC_ALL=C awk '{str=str " " $0} END{ # 注意明文中可能有特殊字符，必须以二进制方式处理为转义字符，经过od命令转十进制处理
 			printf("\x27");
@@ -267,24 +270,27 @@ function encrypt_operator ()
 				fi
 				# 这里只能用od配合awk处理，因为要考虑广泛的文本编码支持
 				cat "$line" | od -tu1 -An -v | LC_ALL=C awk -v salt=$salt_value -v linefeed="$text_linefeed" 'BEGIN{
-					printf("%s",salt linefeed) | "cat"; # 第一行输出Salt值
-				} {str=str " " $0} END{
-					len=split(str,arr," ");
+					printf("%s",salt linefeed); # 第一行输出Salt值
 					str="";
 					cmd="encrypt_code_text " salt;
-					for(i=1;i<=len;i++){
-						if(arr[i]==13||arr[i]==10){ # 换行符 CR LF
-							close("cat"); # 为保证兼容性，用命令管道控制输出
-							printf("%s",str) | cmd; # 按行执行encrypt_code_text
-							close(cmd);
-							str="";
-							printf("%c",arr[i]+0) | "cat";
+				} {
+					for(i=1;i<=NF;i++){
+						if($i==13||$i==10){ # 换行符 CR LF
+							# 为保证兼容性，用命令管道控制输出
+							if(length(str)){ # 避免空跑浪费
+								printf("%s",str) | cmd; # 按行执行encrypt_code_text
+								close(cmd);
+								str="";
+							}
+							printf("%c",$i+0);
 						}
-						else str=str sprintf("%c",arr[i]+0);
+						else str=str sprintf("%c",$i+0);
 					}
-					close("cat");
-					printf("%s",str) | cmd;
-					close(cmd);
+				} END{
+					if(length(str)){
+						printf("%s",str) | cmd;
+						close(cmd);
+					}
 				}' | sponge "$line"
 			done
 			mv "${fname%.enc}" "$fname" # 整体加密後，文件名增加".enc"後缀
@@ -304,9 +310,7 @@ function encrypt_operator ()
 				fi # 部分加密只支持兼容ASCII的文本编码，会格式化换行符，LC_ALL=C是必须的，保证awk按ASCII编码处理，避免报错
 				cat "$line" | LC_ALL=C awk -v linefeed="$text_linefeed" 'BEGIN{RS="\r\n|\n|\r";crypt_flag=0;} {
 					if(crypt_flag==0){ # 未获取Salt值
-						if(NR>3){
-							printf("%s",$0 linefeed) | "cat";
-						}
+						if(NR>3)printf("%s",$0 linefeed);
 						else{
 							if(match($0,"^(.*[^0-9A-Za-z])?[0-9A-Fa-f]{16}$")){
 								oldsalt=substr($0,RLENGTH-15);
@@ -314,33 +318,30 @@ function encrypt_operator ()
 								salt | getline newsalt;
 								close(salt);
 								cmd="encrypt_code_text " newsalt;
-								printf("%s",substr($0,1,RLENGTH-16) newsalt linefeed) | "cat";
+								printf("%s",substr($0,1,RLENGTH-16) newsalt linefeed);
 								crypt_flag=1;
 							}
-							else{
-								printf("%s",$0 linefeed) | "cat";
-							}
+							else printf("%s",$0 linefeed);
 						}
 					}
 					else if(crypt_flag==1){ # 已获取Salt值
 						if(match($0,"^(.*[^0-9A-Za-z])?" oldsalt "$")){
-							printf("%s",substr($0,1,RLENGTH-16) newsalt linefeed) | "cat";
+							printf("%s",substr($0,1,RLENGTH-16) newsalt linefeed);
 							crypt_flag=2;
 						}
-						else{
-							printf("%s",$0 linefeed) | "cat";
-						}
+						else printf("%s",$0 linefeed);
 					}
 					else if(crypt_flag==2){ # 处于加密部分
 						if(match($0,"^(.*[^0-9A-Za-z])?" oldsalt "$")){
-							printf("%s",substr($0,1,RLENGTH-16) newsalt linefeed) | "cat";
+							printf("%s",substr($0,1,RLENGTH-16) newsalt linefeed);
 							crypt_flag=1;
 						}
 						else{ # 需要加密处理
-							close("cat");
-							printf("%s",$0) | cmd;
-							close(cmd);
-							printf("%s",linefeed) | "cat";
+							if(length($0)){
+								printf("%s",$0) | cmd;
+								close(cmd);
+							}
+							printf("%s",linefeed);
 						}
 					}
 				}' | sponge "$line"
@@ -411,30 +412,48 @@ function decrypt_operator ()
 		if [ "${fname##*.}" = "enc" ]; then # 整体解密
 			find "$fname" -type f | while read line
 			do
-				cat "$line" | od -tu1 -An -v | LC_ALL=C awk '{str=str " " $0} END{
-					len=split(str,arr," ");
+				cat "$line" | od -tu1 -An -v | LC_ALL=C awk 'BEGIN{
+					salt_flag=0;
 					str="";
 					salt="";
-					for(i=1;i<=len;i++){
-						if(arr[i]==13||arr[i]==10)break;
-						else salt=salt sprintf("%c",arr[i]+0); # 获取Salt值
-					}
-					i++;
-					if(i<=len)if(arr[i-1]==13&&arr[i]==10)i++; # 跳过第一行
-					cmd="decrypt_code_text " salt;
-					for(;i<=len;i++){
-						if(arr[i]==13||arr[i]==10){ # 换行符 CR LF
-							close("cat");
-							printf("%s",str) | cmd; # 按行执行decrypt_code_text
-							close(cmd);
-							str="";
-							printf("%c",arr[i]+0) | "cat";
+				} {
+					i=1;
+					if(salt_flag==0){
+						for(;i<=NF;i++){
+							if($i==13||$i==10){
+								salt_flag=1;
+								lineend=$i;
+								i++;
+								break;
+							}
+							else salt=salt sprintf("%c",$i+0); # 获取Salt值
 						}
-						else str=str sprintf("%c",arr[i]+0);
 					}
-					close("cat");
-					printf("%s",str) | cmd;
-					close(cmd);
+					if(salt_flag==1){
+						if(i<=NF){
+							if(lineend==13&&$i==10)i++;
+							salt_flag=2;
+							cmd="decrypt_code_text " salt;
+						}
+					}
+					if(salt_flag==2){
+						for(;i<=NF;i++){
+							if($i==13||$i==10){ # 换行符 CR LF
+								if(length(str)){
+									printf("%s",str) | cmd; # 按行执行decrypt_code_text
+									close(cmd);
+									str="";
+								}
+								printf("%c",$i+0);
+							}
+							else str=str sprintf("%c",$i+0);
+						}
+					}
+				} END{
+					if(length(str)){
+						printf("%s",str) | cmd;
+						close(cmd);
+					}
 				}' | sponge "$line"
 			done
 			mv "$fname" "${fname%.enc}"
@@ -451,32 +470,31 @@ function decrypt_operator ()
 				fi # 部分加密只支持兼容ASCII的文本编码，会格式化换行符，LC_ALL=C是必须的，保证awk按ASCII编码处理，避免报错
 				cat "$line" | LC_ALL=C awk -v linefeed="$text_linefeed" 'BEGIN{RS="\r\n|\n|\r";crypt_flag=0;} {
 					if(crypt_flag==0){ # 未获取Salt值
-						if(NR>3){
-							printf("%s",$0 linefeed) | "cat";
-						}
+						if(NR>3)printf("%s",$0 linefeed);
 						else{
 							if(match($0,"^(.*[^0-9A-Za-z])?[0-9A-Fa-f]{16}$")){
 								salt=substr($0,RLENGTH-15);
 								cmd="decrypt_code_text " salt;
 								crypt_flag=1;
 							}
-							printf("%s",$0 linefeed) | "cat";
+							printf("%s",$0 linefeed);
 						}
 					}
 					else if(crypt_flag==1){ # 已获取Salt值
 						if(match($0,"^(.*[^0-9A-Za-z])?" salt "$"))crypt_flag=2;
-						printf("%s",$0 linefeed) | "cat";
+						printf("%s",$0 linefeed);
 					}
 					else if(crypt_flag==2){ # 处于加密部分
 						if(match($0,"^(.*[^0-9A-Za-z])?" salt "$")){
 							crypt_flag=1;
-							printf("%s",$0 linefeed) | "cat";
+							printf("%s",$0 linefeed);
 						}
 						else{ # 需要解密处理
-							close("cat");
-							printf("%s",$0) | cmd;
-							close(cmd);
-							printf("%s",linefeed) | "cat";
+							if(length($0)){
+								printf("%s",$0) | cmd;
+								close(cmd);
+							}
+							printf("%s",linefeed);
 						}
 					}
 				}' | sponge "$line"
@@ -678,7 +696,6 @@ function code_decrypt ()
 		fi
 		echo -n "$ciphertext" | {
 			salt_length=$(cat /dev/null | openssl chacha20 -pbkdf2 -pass pass:0 -S "$encrypt_salt_shell" | wc -c)
-			cd $(dirname "$encrypt_pass_file")
 			openssl base64 -A -d | {
 				echo -n "$encrypt_salt_shell" | sed 's/\([0-9A-F]\{2\}\)/\\\\\\x\1/gI' | {
 					printf "Salted__"
@@ -688,7 +705,7 @@ function code_decrypt ()
 					cat > /dev/null # 消耗掉xargs命令的输出
 				}
 				cat
-			} | openssl enc -chacha20 -pbkdf2 -iter 10000 -md sha256 -pass file:$(basename "$encrypt_pass_file") -d -S "$encrypt_salt_shell"
+			} | $repo_crypt_command -pass file:"$encrypt_pass_file" -d -S "$encrypt_salt_shell"
 		}
 	fi
 }
