@@ -52,7 +52,7 @@ encrypt_code_text='# 文本加密，需传入Salt值
 		'"$repo_crypt_command"' -a -A -pass file:"'"$encrypt_pass_file"'" -S "$salt_value"
 	else
 		'"$repo_crypt_command"' -pass file:"'"$encrypt_pass_file"'" -S "$salt_value" | {
-			dd bs='$salt_length' skip=1 count=0 2>/dev/null # 去除Salt值
+			dd bs=1 skip='$salt_length' count=0 2>/dev/null # 去除Salt值
 			cat
 		} | openssl base64 -A
 	fi
@@ -68,7 +68,7 @@ decrypt_code_text='# 文本解密，需传入Salt值
 				printf "Salted__"
 				xargs printf
 			} | {
-				dd bs='$salt_length' count=1 2>/dev/null # 增添Salt值
+				dd bs=1 count='$salt_length' 2>/dev/null # 增添Salt值
 				cat > /dev/null # 消耗掉xargs命令的输出
 			}
 			cat
@@ -96,7 +96,7 @@ code_encrypt='# 用于加密Shell脚本中的标识，参数是待加密的明�
 			echo -n "$plaintext" | '"$repo_crypt_command"' -a -A -pass file:"'"$encrypt_pass_file"'" -S '$encrypt_salt_shell'
 		else
 			echo -n "$plaintext" | '"$repo_crypt_command"' -pass file:"'"$encrypt_pass_file"'" -S '$encrypt_salt_shell' | {
-				dd bs='$salt_length' skip=1 count=0 2>/dev/null # 去除Salt值
+				dd bs=1 skip='$salt_length' count=0 2>/dev/null # 去除Salt值
 				cat
 			} | openssl base64 -A
 		fi
@@ -116,7 +116,7 @@ code_decrypt='# 用于解密Shell脚本中的标识，参数是待解密的密�
 						printf "Salted__"
 						xargs printf
 					} | {
-						dd bs='$salt_length' count=1 2>/dev/null # 增添Salt值
+						dd bs=1 count='$salt_length' 2>/dev/null # 增添Salt值
 						cat > /dev/null # 消耗掉xargs命令的输出
 					}
 					cat
@@ -687,7 +687,7 @@ function code_decrypt ()
 					printf "Salted__"
 					xargs printf
 				} | {
-					dd bs=$salt_length count=1 2>/dev/null
+					dd bs=1 count=$salt_length 2>/dev/null
 					cat > /dev/null # 消耗掉xargs命令的输出
 				}
 				cat
