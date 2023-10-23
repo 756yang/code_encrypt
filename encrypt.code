@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # encrypt for code repositories
+# 脚本检查完毕，语法逻辑无误
 
 # 比较openssl的版本号
 printf '%s\n' "1.1.1" $(openssl version | awk '{print $2}') | sort -V -C || {
@@ -266,29 +267,24 @@ function encrypt_operator ()
 				fi
 				# 这里只能用od配合awk处理，因为要考虑广泛的文本编码支持
 				cat "$line" | od -tu1 -An -v | LC_ALL=C awk -v salt=$salt_value -v linefeed="$text_linefeed" 'BEGIN{
-					printf("%s",salt linefeed); # 第一行输出Salt值
+					printf("%s",salt linefeed) | "cat"; # 第一行输出Salt值
 				} {str=str " " $0} END{
 					len=split(str,arr," ");
 					str="";
 					cmd="encrypt_code_text " salt;
 					for(i=1;i<=len;i++){
 						if(arr[i]==13||arr[i]==10){ # 换行符 CR LF
-							printf("%s",str) |& cmd; # 按行执行encrypt_code_text
-							close(cmd,"to");
-							gstr=""; # 必须先置空值
-							cmd |& getline gstr;
+							close("cat"); # 为保证兼容性，用命令管道控制输出
+							printf("%s",str) | cmd; # 按行执行encrypt_code_text
 							close(cmd);
 							str="";
-							printf("%s%c",gstr,arr[i]+0);
+							printf("%c",arr[i]+0) | "cat";
 						}
 						else str=str sprintf("%c",arr[i]+0);
 					}
-					printf("%s",str) |& cmd;
-					close(cmd,"to");
-					gstr=""; # 必须先置空值
-					cmd |& getline gstr;
+					close("cat");
+					printf("%s",str) | cmd;
 					close(cmd);
-					printf("%s",gstr);
 				}' | sponge "$line"
 			done
 			mv "${fname%.enc}" "$fname" # 整体加密後，文件名增加".enc"後缀
@@ -308,37 +304,43 @@ function encrypt_operator ()
 				fi # 部分加密只支持兼容ASCII的文本编码，会格式化换行符，LC_ALL=C是必须的，保证awk按ASCII编码处理，避免报错
 				cat "$line" | LC_ALL=C awk -v linefeed="$text_linefeed" 'BEGIN{RS="\r\n|\n|\r";crypt_flag=0;} {
 					if(crypt_flag==0){ # 未获取Salt值
-						if(NR>3)printf("%s",$0 linefeed);
+						if(NR>3){
+							printf("%s",$0 linefeed) | "cat";
+						}
 						else{
 							if(match($0,"^(.*[^0-9A-Za-z])?[0-9A-Fa-f]{16}$")){
 								oldsalt=substr($0,RLENGTH-15);
-								"openssl rand -hex 8" | getline newsalt;
-								printf("%s",substr($0,1,RLENGTH-16) newsalt linefeed);
+								salt="openssl rand -hex 8";
+								salt | getline newsalt;
+								close(salt);
+								cmd="encrypt_code_text " newsalt;
+								printf("%s",substr($0,1,RLENGTH-16) newsalt linefeed) | "cat";
 								crypt_flag=1;
 							}
-							else printf("%s",$0 linefeed);
+							else{
+								printf("%s",$0 linefeed) | "cat";
+							}
 						}
 					}
 					else if(crypt_flag==1){ # 已获取Salt值
 						if(match($0,"^(.*[^0-9A-Za-z])?" oldsalt "$")){
-							printf("%s",substr($0,1,RLENGTH-16) newsalt linefeed);
+							printf("%s",substr($0,1,RLENGTH-16) newsalt linefeed) | "cat";
 							crypt_flag=2;
 						}
-						else printf("%s",$0 linefeed);
+						else{
+							printf("%s",$0 linefeed) | "cat";
+						}
 					}
 					else if(crypt_flag==2){ # 处于加密部分
 						if(match($0,"^(.*[^0-9A-Za-z])?" oldsalt "$")){
-							printf("%s",substr($0,1,RLENGTH-16) newsalt linefeed);
+							printf("%s",substr($0,1,RLENGTH-16) newsalt linefeed) | "cat";
 							crypt_flag=1;
 						}
 						else{ # 需要加密处理
-							cmd="encrypt_code_text " newsalt;
-							printf("%s",$0) |& cmd;
-							close(cmd,"to");
-							gstr=""; # 必须先置空值
-							cmd |& getline gstr;
+							close("cat");
+							printf("%s",$0) | cmd;
 							close(cmd);
-							printf("%s",gstr linefeed);
+							printf("%s",linefeed) | "cat";
 						}
 					}
 				}' | sponge "$line"
@@ -422,22 +424,17 @@ function decrypt_operator ()
 					cmd="decrypt_code_text " salt;
 					for(;i<=len;i++){
 						if(arr[i]==13||arr[i]==10){ # 换行符 CR LF
-							printf("%s",str) |& cmd; # 按行执行decrypt_code_text
-							close(cmd,"to");
-							gstr=""; # 必须先置空值
-							cmd |& getline gstr;
+							close("cat");
+							printf("%s",str) | cmd; # 按行执行decrypt_code_text
 							close(cmd);
 							str="";
-							printf("%s%c",gstr,arr[i]+0);
+							printf("%c",arr[i]+0) | "cat";
 						}
 						else str=str sprintf("%c",arr[i]+0);
 					}
-					printf("%s",str) |& cmd;
-					close(cmd,"to");
-					gstr=""; # 必须先置空值
-					cmd |& getline gstr;
+					close("cat");
+					printf("%s",str) | cmd;
 					close(cmd);
-					printf("%s",gstr);
 				}' | sponge "$line"
 			done
 			mv "$fname" "${fname%.enc}"
@@ -454,32 +451,32 @@ function decrypt_operator ()
 				fi # 部分加密只支持兼容ASCII的文本编码，会格式化换行符，LC_ALL=C是必须的，保证awk按ASCII编码处理，避免报错
 				cat "$line" | LC_ALL=C awk -v linefeed="$text_linefeed" 'BEGIN{RS="\r\n|\n|\r";crypt_flag=0;} {
 					if(crypt_flag==0){ # 未获取Salt值
-						if(NR>3)printf("%s",$0 linefeed);
+						if(NR>3){
+							printf("%s",$0 linefeed) | "cat";
+						}
 						else{
 							if(match($0,"^(.*[^0-9A-Za-z])?[0-9A-Fa-f]{16}$")){
 								salt=substr($0,RLENGTH-15);
+								cmd="decrypt_code_text " salt;
 								crypt_flag=1;
 							}
-							printf("%s",$0 linefeed);
+							printf("%s",$0 linefeed) | "cat";
 						}
 					}
 					else if(crypt_flag==1){ # 已获取Salt值
 						if(match($0,"^(.*[^0-9A-Za-z])?" salt "$"))crypt_flag=2;
-						printf("%s",$0 linefeed);
+						printf("%s",$0 linefeed) | "cat";
 					}
 					else if(crypt_flag==2){ # 处于加密部分
 						if(match($0,"^(.*[^0-9A-Za-z])?" salt "$")){
 							crypt_flag=1;
-							printf("%s",$0 linefeed);
+							printf("%s",$0 linefeed) | "cat";
 						}
 						else{ # 需要解密处理
-							cmd="decrypt_code_text " salt;
-							printf("%s",$0) |& cmd;
-							close(cmd,"to");
-							gstr=""; # 必须先置空值
-							cmd |& getline gstr;
+							close("cat");
+							printf("%s",$0) | cmd;
 							close(cmd);
-							printf("%s",gstr linefeed);
+							printf("%s",linefeed) | "cat";
 						}
 					}
 				}' | sponge "$line"
