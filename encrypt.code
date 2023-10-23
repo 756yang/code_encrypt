@@ -555,8 +555,7 @@ function full_decrypt_operator ()
 				else
 					text_linefeed=$'\r'
 				fi # 部分加密只支持兼容ASCII的文本编码，会格式化换行符，LC_ALL=C是必须的，保证awk按ASCII编码处理，避免报错
-				cat "$line" | LC_ALL=C awk -v linefeed="$text_linefeed" 'BEGIN{RS="\r\n|\n|\r";crypt_flag=0;} {
-					salt="";
+				cat "$line" | LC_ALL=C awk -v linefeed="$text_linefeed" 'BEGIN{RS="\r\n|\n|\r";crypt_flag=0;salt="";} {
 					if(crypt_flag==0){ # 未获取Salt值
 						if(NR>3)printf("%s",$0 linefeed);
 						else{

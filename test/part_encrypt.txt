@@ -1,17 +1,17 @@
 这里是不进行加密的，因为还未指定Salt值。
 文件首次出现的以Salt值结尾的一行指定了Salt标识符，这个标识符是16字节的16进制数字。
-b57dfa874d945590
+380982b99cbda1cc
 Salt标识符必须在文件前三行的某一行指定。
 
-这里正文是不加密的，只有指定了Salt标识符之後的才两个Salt标识符行间才会加密。
+这里正文是不加密的，只有指定了Salt标识符之後的两个Salt标识符行间才会加密。
 Salt标识符只要在行末即可正常识别，这使C++之类的语言可以不完全解密即可编译。
 用注释语法对Salt标识符做注释，就不会影响代码编译了，但这不适用于HTML的注释。
 不完全解密就是保留了Salt标识符的行，而完全解密会去除Salt标识符的行，
 去除了Salt标识符也就无法知道哪些内容需要加密，所以应该额外存储此信息到其他文件。
 
-# b57dfa874d945590
-d2fWvP6wOt7wyuuON9hw+Ld7t+fKwUHB0YUhoVNepnfIjjJTZRcqnKUix46Cug==
-e2DrvfarjyczV46GVbhZm9p39KDt
-// b57dfa874d945590
+# 380982b99cbda1cc
+rR72BhtHEbnmxRg0EThPE/53DCa00u4fhjtiHZ3K2bpsDjWi9h25qVZMjw2k/A==
+oRnLBxNcpEAlWH08c1hmcJN7T2GT
+// 380982b99cbda1cc
 
 这里也是正文，也不加密。
