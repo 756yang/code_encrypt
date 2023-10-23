@@ -93,9 +93,9 @@ code_encrypt='# 用于加密Shell脚本中的标识，参数是待加密的明�
 	echo -n "code_decrypt "
 	if [ "$plaintext" ]; then
 		if [ '$salt_length' -eq 0 ]; then
-			echo -n "$plaintext" | '"$repo_crypt_command"' -a -A -pass file:"'"$encrypt_pass_file"'" -S "$encrypt_salt_shell"
+			echo -n "$plaintext" | '"$repo_crypt_command"' -a -A -pass file:"'"$encrypt_pass_file"'" -S '$encrypt_salt_shell'
 		else
-			echo -n "$plaintext" | '"$repo_crypt_command"' -pass file:"'"$encrypt_pass_file"'" -S "$encrypt_salt_shell" | {
+			echo -n "$plaintext" | '"$repo_crypt_command"' -pass file:"'"$encrypt_pass_file"'" -S '$encrypt_salt_shell' | {
 				dd bs='$salt_length' skip=1 count=0 2>/dev/null # 去除Salt值
 				cat
 			} | openssl base64 -A
@@ -109,10 +109,10 @@ code_decrypt='# 用于解密Shell脚本中的标识，参数是待解密的密�
 	if [ "$ciphertext" ]; then
 		echo -n "$ciphertext" | {
 			if [ '$salt_length' -eq 0 ]; then
-				'"$repo_crypt_command"' -a -A -pass file:"'"$encrypt_pass_file"'" -d -S "$encrypt_salt_shell"
+				'"$repo_crypt_command"' -a -A -pass file:"'"$encrypt_pass_file"'" -d -S '$encrypt_salt_shell'
 			else
 				openssl base64 -A -d | {
-					echo -n "$encrypt_salt_shell" | sed '$'\x27''s/\([0-9A-F]\{2\}\)/\\\\\\x\1/gI'$'\x27'' | {
+					echo -n '$encrypt_salt_shell' | sed '$'\x27''s/\([0-9A-F]\{2\}\)/\\\\\\x\1/gI'$'\x27'' | {
 						printf "Salted__"
 						xargs printf
 					} | {
@@ -120,7 +120,7 @@ code_decrypt='# 用于解密Shell脚本中的标识，参数是待解密的密�
 						cat > /dev/null # 消耗掉xargs命令的输出
 					}
 					cat
-				} | '"$repo_crypt_command"' -pass file:"'"$encrypt_pass_file"'" -d -S "$encrypt_salt_shell"
+				} | '"$repo_crypt_command"' -pass file:"'"$encrypt_pass_file"'" -d -S '$encrypt_salt_shell'
 			fi
 		} | od -tu1 -An -v | LC_ALL=C awk '$'\x27''{str=str " " $0} END{ # 注意明文中可能有特殊字符，必须以二进制方式处理为转义字符，经过od命令转十进制处理
 			printf("\x27");
